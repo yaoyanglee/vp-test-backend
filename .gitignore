@@ -1,0 +1,8 @@
+__pycache__/
+archive/
+history/
+images/
+p2-env/
+static/
+testing_data.csv
+config.prop
