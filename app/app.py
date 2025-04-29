@@ -111,7 +111,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Azure Blob configuration
 CONNECTION_STRING = config["azure_storage"]["connection_string"]
-CONTAINER_NAME = config["azure_storage"]["container_name"]
+# CONTAINER_NAME = config["azure_storage"]["container_name"]
 # Text file container
 CONTAINER_NAME_TXT = config['azure_storage']["container_name_txt"]
 
