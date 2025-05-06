@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import concurrent.futures
 import configparser
 import copy
 import cv2
@@ -11,6 +12,7 @@ import numpy as np
 import os
 import pandas as pd
 import re
+import tempfile
 import time
 import typing
 import uvicorn
@@ -18,9 +20,16 @@ import uvicorn
 
 from azure.ai.vision.imageanalysis import ImageAnalysisClient
 from azure.ai.vision.imageanalysis.models import VisualFeatures
-from azure.core.credentials import AzureKeyCredential
+from azure.core.credentials import AzureKeyCredential, AzureNamedKeyCredential
+from azure.data.tables import TableServiceClient
+from azure.data.tables.aio import TableClient
+from azure.ai.documentintelligence import DocumentIntelligenceClient
+from azure.ai.documentintelligence.models import AnalyzeResult
+from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
+from azure.core.exceptions import HttpResponseError
 from azure.storage.blob import BlobServiceClient
-from fastapi import FastAPI, HTTPException, Query, Form, File, UploadFile
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, Query, Form, File, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fuzzywuzzy import fuzz
 from io import BytesIO
@@ -29,21 +38,18 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import AzureChatOpenAI
-# Import issues
 from app.logger.Logger import Logger
 from multiprocessing import Pool
 from operator import itemgetter
 from rapidfuzz import process, fuzz
 from PIL import Image, ImageEnhance
-# Import issues added absolute path instead
+from app.pdf_processor import PDFProcessor
 from app.structs.response.RawEntry import RawEntry
 from app.structs.request.GetPatientDataRaw import GetPatientDataRaw
 from app.routes.sse.sse_routes import sse_router
 from app.prompt import CHAT_SYSTEM_PROMPT, STRUCTURED_GENERATOR_PROMPT, JSON_GENERATOR_PROMPT, IMG_EXTRACTION_PROMPT, IMG_OCR_PROMPT, IMG_JSON_GENERATOR_PROMPT
 from pydantic import BaseModel, Field
-from typing import Any, Iterator, List, Optional, Tuple, Union
-
-import concurrent.futures
+from typing import Any, Iterator, List, Optional, Set, Tuple, Union
 
 
 class ScheduleItem(BaseModel):
@@ -53,25 +59,27 @@ class ScheduleItem(BaseModel):
         description="Number of times for the drug to be taken in the afternoon")
     evening: int = Field(
         description="Number of times for the drug to be taken in the evening")
+    night: int = Field(
+        description="Number of times for the drug to be taken in the night")
 
 
 class JSON_SCHEMA(BaseModel):
     drug_name: str = Field(description="Name of the drug")
     uom: str = Field(description="Unit of measurement for the drug")
-    dosage: str = Field(description="Dosage to be taken for the drug")
+    dosage: str = Field(description="The prescribed amount to consume")
     content_uom: str = Field(
-        description="Dosage or the unit of the measurement")
+        description="Amount of active ingredient per unit.")
     frequency: str = Field(description="Frequency to take the drug daily")
-    instruction: str = Field(description="Meal preference")
+    instruction: str = Field(
+        description="Additional instructions or reference on how to take the medicine (before or after food) and how long (up to 90 days)")
     condition: str = Field(description="What is the medicine used to treat")
     schedule: List[ScheduleItem] = Field(
-        description="Schedule with morning, afternoon, evening values")
+        description="Schedule of medication in the morning, afternoon, evening and night")
 
 
 # --- Load all configuration settings ---
 config = configparser.ConfigParser()
-# config.read(
-#     r'./config.prop')
+# config.read('config.prop')
 config_path = os.path.join(os.path.dirname(__file__), "config.prop")
 config.read(config_path)
 
@@ -89,6 +97,7 @@ logger.addHandler(handler)
 parser = JsonOutputParser(pydantic_object=JSON_SCHEMA)
 
 app = FastAPI()
+
 # Allow all origins for development purposes
 app.add_middleware(
     CORSMiddleware,
@@ -111,13 +120,14 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Azure Blob configuration
 CONNECTION_STRING = config["azure_storage"]["connection_string"]
-# CONTAINER_NAME = config["azure_storage"]["container_name"]
+
 # Text file container
 CONTAINER_NAME_TXT = config['azure_storage']["container_name_txt"]
 
 # Azure Vision configuration
 VISION_API_KEY = config['azure_vision']['azure_vision_api_key']
 VISION_API_ENDPOINT = config['azure_vision']['azure_vision_endpoint']
+
 
 try:
     logger.info("Initialising Blob Service Client...")
@@ -126,11 +136,80 @@ try:
     container_client = blob_service_client.get_container_client(
         CONTAINER_NAME_TXT)
     logger.info(f"Successfully connected to container: {CONTAINER_NAME_TXT}")
-
 except Exception as e:
     logger.error(f"Failed to initialise Blob Service Client: {e}")
     raise
+
 blobs = list(container_client.list_blobs())
+
+# Azure Table Service Connection
+table_config = config["azure_table"]
+account_name, account_key = table_config["account_name"], table_config["account_key"]
+
+credential = AzureNamedKeyCredential(account_name, account_key)
+endpoint = f"https://{account_name}.table.core.windows.net"
+table_service_client = TableServiceClient(
+    endpoint=endpoint, credential=credential)
+
+
+# Function to get table client
+def get_table_client(table_name):
+    return table_service_client.get_table_client(table_name)
+
+# Function to fetch all entities from a table
+
+
+def get_all_entities(table_name):
+    table_client = get_table_client(table_name)
+    return [e["PartitionKey"] for e in table_client.list_entities()]
+
+
+def transform_df(df):
+    """
+    Transforms the Patients CSV Data into the required format.
+
+    Parameters:
+        df (pd.DataFrame): The pandas DataFrame containing patient data.
+
+    Returns:
+        pd.DataFrame: The transformed DataFrame with standardized UOM and formatted content.
+    """
+    if df.empty:
+        logger.warning("Input DataFrame is empty.")
+        return df
+
+    # Exclude rows where 'uom' is 'EA' and reset the index
+    df = df[df['uom'] != 'EA'].reset_index(drop=True)
+
+    # UOM Mapping Dictionary
+    uom_mapping = {
+        'BTL': 'Bottle',
+        'CP': 'Capsule',
+        'IJ': 'Injection',
+        'PKT': 'Packet',
+        'TA': 'Tablet',
+        'TBE': 'Tube',
+        'VAL': 'Injection'
+    }
+
+    # Standardize UOM values
+    df['uom'] = df['uom'].map(uom_mapping)
+
+    # Generate a formatted content string
+    df['content'] = df.apply(
+        lambda row: f"Drug: {row['item_description']}, UOM: {row['uom']}, Dosage instructions: {row['dosage_instr']}", axis=1)
+
+    return df
+
+
+# Sample anonymised medication structured data
+# path = 'testing_data.csv'
+testing_csv_path = os.path.join(os.path.dirname(__file__), "testing_data.csv")
+full_df = (lambda x: transform_df(pd.read_csv(x)))(testing_csv_path)
+
+leaflet_names = [blob['name'][:-4].lower() for blob in blobs]
+# Fetch required data in parallel
+brand_names, drug_groupings = map(get_all_entities, ["brands", "grouping"])
 
 # Create an Image Analysis client
 vision_client = ImageAnalysisClient(
@@ -156,9 +235,9 @@ answer_generation_prompt = PromptTemplate(
 
 # CSV Chain
 structured_output_prompt = PromptTemplate(
-    template=STRUCTURED_GENERATOR_PROMPT, input_variables=["context", "pdfcontext", "language"])
+    template=STRUCTURED_GENERATOR_PROMPT, input_variables=["context", "pdfcontext"])
 json_output_prompt = PromptTemplate(template=JSON_GENERATOR_PROMPT, input_variables=[
-                                    "sum_context"], partial_variables={"format_instructions": parser.get_format_instructions()})
+                                    "sum_context", "language"], partial_variables={"format_instructions": parser.get_format_instructions()})
 
 structured_chain_1 = structured_output_prompt | llm
 structured_chain_2 = json_output_prompt | llm | parser
@@ -167,6 +246,7 @@ complete_chain = ({
     "sum_context": structured_chain_1,
     "context": itemgetter("context"),
     "pdfcontext": itemgetter("pdfcontext"),
+    "language": itemgetter("language"),
 }
     | RunnablePassthrough.assign(json=structured_chain_2)
 )
@@ -192,11 +272,20 @@ img_complete_chain = (
     | RunnablePassthrough.assign(json=img_structured_chain_2)
 )
 
+pdf_processor = PDFProcessor(img_complete_chain)
 
-# --- Helper Functions ---
+
 def dewarp_text(image: np.ndarray) -> np.ndarray:
     """
-    Attempts to correct curved text in images.
+    Corrects curved or distorted text in an image using contour detection and perspective transformation.
+
+    Parameters:
+    - image : np.ndarray
+        Input image as a NumPy array (expected to be in RGB format).
+
+    Returns:
+    - np.ndarray
+        Dewarped (corrected) image if successful, otherwise returns the original image.
     """
     try:
         # Convert to grayscale
@@ -210,61 +299,69 @@ def dewarp_text(image: np.ndarray) -> np.ndarray:
 
         # Find contours
         contours, _ = cv2.findContours(
-            thresh, cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE
+            thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
 
+        if not contours:
+            return image
+
         # Find the largest contour (assumed to be the text area)
-        if contours:
-            largest_contour = max(contours, key=cv2.contourArea)
+        largest_contour = max(contours, key=cv2.contourArea)
 
-            # Get the minimum area rectangle
-            rect = cv2.minAreaRect(largest_contour)
-            box = cv2.boxPoints(rect)
-            box = np.intp(box)
+        # Get the minimum area rectangle
+        rect = cv2.minAreaRect(largest_contour)
+        box = cv2.boxPoints(rect)
+        box = np.intp(box)
 
-            # Get width and height of the detected rectangle
-            width = int(rect[1][0])
-            height = int(rect[1][1])
+        # Get width and height of the detected rectangle
+        width, height = map(int, rect[1])
 
-            # Get the perspective transform
-            src_pts = box.astype("float32")
-            dst_pts = np.array([
-                [0, height-1],
-                [0, 0],
-                [width-1, 0],
-                [width-1, height-1]
-            ], dtype="float32")
+        if width == 0 or height == 0:
+            return image
 
-            # Apply perspective transform
-            matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
-            dewarped = cv2.warpPerspective(image, matrix, (width, height))
+        # Define source and destination points for perspective transform
+        src_pts = box.astype("float32")
+        dst_pts = np.array([
+            [0, height - 1],
+            [0, 0],
+            [width - 1, 0],
+            [width - 1, height - 1]
+        ], dtype="float32")
 
-            return dewarped
+        # Compute perspective transformation matrix
+        matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+        dewarped = cv2.warpPerspective(image, matrix, (width, height))
+
+        return dewarped
+
     except Exception as e:
         logger.warning(f"Dewarping failed: {e}")
         return image
 
-    return image
 
-
-def image_rescaler(img: Image.Image,
-                   min_length: int = 2048,
-                   max_length: int = 4096,
-                   min_dpi: int = 400,     # Optimized DPI setting
-                   output_format: str = 'png',  # Changed to PNG for better quality
-                   # Maximized quality
-                   quality: int = 100) -> Tuple[np.ndarray, bytes]:
+def image_rescaler(
+    img: Image.Image,
+    min_length: int = 2048,
+    max_length: int = 4096,
+    min_dpi: int = 400,
+    output_format: str = "png",
+    quality: int = 100
+) -> Tuple[np.ndarray, bytes]:
     """
-    Adjusts image size based on resolution requirements and content analysis.
-    Enhanced for optimal OCR performance.
+    Rescales an image for optimal OCR performance, adjusting size based on resolution and text content analysis.
 
-    Note on parameters:
-    - min_dpi = 400: Best balance between quality and file size. 500+ DPI rarely improves OCR
-                     but significantly increases processing time and file size
-    - quality = 100: For PNG, this doesn't affect quality but affects compression
-                     For JPEG, 100 gives best quality but larger file size
-    - output_format = 'png': Lossless format better for text recognition
+    Parameters:
+    - img (Image.Image): The input PIL image to be processed.
+    - min_length (int, optional): Minimum length for the longer side of the image. Defaults to 2048.
+    - max_length (int, optional): Maximum allowed length for the longer side of the image. Defaults to 4096.
+    - min_dpi (int, optional): Minimum DPI required for OCR accuracy. Defaults to 400.
+    - output_format (str, optional): Output image format, recommended as 'png' for lossless quality. Defaults to 'png'.
+    - quality (int, optional): Image compression quality. Has no effect on PNG but impacts JPEG compression. Defaults to 100.
+
+    Returns:
+    - Tuple[np.ndarray, bytes]: A tuple containing:
+        1. The processed image as a NumPy array.
+        2. The image bytes in the specified output format.
     """
     try:
         width, height = img.size
@@ -401,15 +498,38 @@ def image_rescaler(img: Image.Image,
 
 def convert_points_to_dict(points):
     """
-    Convert ImagePoint objects to serializable dictionary format
+    Converts a list of ImagePoint objects into a serializable dictionary format.
+
+    Parameters:
+    - points (List[ImagePoint]): A list of ImagePoint objects, each containing x and y coordinates.
+
+    Returns:
+    - List[dict]: A list of dictionaries, where each dictionary represents a point with 'x' and 'y' keys.
     """
     return [{'x': point.x, 'y': point.y} for point in points]
 
 
 def azure_ocr_parser(results):
     """
-    Extract text from Azure Vision OCR result in different formats
-    Returns both concatenated string and structured formats
+    Parses the OCR results from Azure Vision and extracts text in multiple formats.
+
+    Parameters:
+    - results (Azure OCR Result): The OCR output from Azure Vision API.
+
+    Returns:
+    - dict: A dictionary containing:
+        - 'concatenated_text' (str): All detected text concatenated with spaces.
+        - 'newline_text' (str): Text with preserved line breaks.
+        - 'structured_text' (dict): A structured representation with:
+            - 'lines' (list): A list of detected lines, each containing:
+                - 'text' (str): The extracted line text.
+                - 'bounding_box' (list of dicts): The bounding polygon of the line.
+            - 'words_with_confidence' (list): A list of words, each containing:
+                - 'word' (str): The recognized word.
+                - 'confidence' (float): The confidence score of recognition.
+                - 'bounding_box' (list of dicts): The bounding polygon of the word.
+
+    If an error occurs during processing, logs the error and returns None.
     """
     # Initialize collections
     all_lines = []
@@ -419,17 +539,17 @@ def azure_ocr_parser(results):
     }
 
     try:
-        if results.read is not None:
+        if results.read:
             for block in results.read.blocks:
                 for line in block.lines:
-                    # Add full line to collections
+                    # Store full line text
                     all_lines.append(line.text)
                     structured_text['lines'].append({
                         'text': line.text,
                         'bounding_box': convert_points_to_dict(line.bounding_polygon)
                     })
 
-                    # Add individual words with confidence
+                    # Store individual words with confidence scores
                     for word in line.words:
                         structured_text['words_with_confidence'].append({
                             'word': word.text,
@@ -447,45 +567,21 @@ def azure_ocr_parser(results):
             'structured_text': structured_text
         }
     except Exception as e:
-        logger.error(f"Error processing OCR results: {str(e)}")
+        logger.error(f"Error processing OCR results: {e}")
         return None
 
 
-def transform_df(df):
-    """Transform the Patients CSV Data into Required Format
-
-    Parameters:
-        df (pd.DataFrame): The pandas dataframe of the patients data
-
-    Outputs:
-        df (pd.DataFrame): The formatted dataframe of the patients data
-    """
-    df = df[df['uom'] != 'EA'].reset_index(drop=True)
-    id2term = {'TA': 'Tablet', 'IJ': 'Injection'}
-    df['uom'] = df['uom'].map(id2term)
-    df['content'] = 'Drug: ' + df['item_description'] + ', UOM: ' + df['uom'] + ', Dosage instructions: ' + df[
-        'dosage_instr']
-    return df
-
-
-# Global Patient Dataframe
-# path = r'code\app\testing_data.csv'
-testing_csv_path = os.path.join(os.path.dirname(__file__), "testing_data.csv")
-full_df = (lambda x: transform_df(pd.read_csv(x)))(testing_csv_path)
-
-
-# CSV Helper Functions
 def fuzzy_dedup(df, similarity_threshold=98):
-    """ Checks for similarity and removes duplicates
+    """ 
+    Checks for similarity and removes duplicates
 
     Parameters:
-        df (pd.DataFrame): The formatted dataframe of the patients data
-        similarity_threshold (int): The expected similarity percentage to decide which duplicates to drop
+    - df (pd.DataFrame): The formatted dataframe of the patients data
+    - similarity_threshold (int): The expected similarity percentage to decide which duplicates to drop
 
     Outputs:
-        df_copy (pd.DataFrame): The dataframe of the patients data without duplicates
+    - df_copy (pd.DataFrame): The dataframe of the patients data without duplicates
     """
-
     def check_similarity(d):
         dupl_indexes = []
         for i in range(len(d.values) - 1):
@@ -505,189 +601,325 @@ def filter_df(df, patient_id):
     Filter Dataframe based on patient_id
 
     Parameters:
-        df (pd.DataFrame): The formatted df from transform_df
-        patient_id (str): The ID for each patient (eg. B3144XXXXX)
+    - df (pd.DataFrame): The formatted df from transform_df
+    - patient_id (str): The ID for each patient (eg. B3144XXXXX)
 
     Outputs:
-        docs (DataFrameLoader): The drug instructions from csv.
-        prescriptions (list): The list of string of drug names
+    - docs (DataFrameLoader): The drug instructions from csv.
+    - prescriptions (list): The list of string of drug names
     """
+    prescriptions = []
+
     condition = df['ANYM_ID_NO'] == patient_id
     filtered_df = df[condition]
     rm_df = fuzzy_dedup(filtered_df)
 
-    prescriptions = []
+    logger.debug(rm_df)
+
     for drug in rm_df["item_description"]:
         prescriptions.append(drug)
 
     rm_df = rm_df.drop(columns=["item_description", "dosage_instr"])
+    rm_df['content'] = rm_df['content'].fillna('')
     data_loader = DataFrameLoader(rm_df, page_content_column="content")
     docs = data_loader.load_and_split()
     return docs, prescriptions
 
 
-def extract_conditions(patient_id: str, prescriptions: list, selected_language: str):
+async def extract_conditions(patient_id: str, prescriptions: list, selected_language: str):
     """
     Extracting the conditions from the medication summary to add to the csv data
 
     Parameters:
-        patient_id (str): The ID for each patient (eg. B3144XXXXX)
-        prescriptions (list): A list of prescriptions for the specified patient
+    - patient_id (str): The ID for each patient (eg. B3144XXXXX)
+    - prescriptions (list): A list of prescriptions for the specified patient
 
     Outputs:
-        formatted_response (dict): Returns the dictionary of the medication summary 
-        medinfo (dict): Returns the dictionary of the conditions from the mdeication summary
+    - formatted_response (dict): Returns the dictionary of the medication summary 
+    - medinfo (dict): Returns the dictionary of the conditions from the medication summary
     """
-    # Change this line to call azure_get_data()
-    formatted_response = azure_get_data(prescriptions, selected_language)
+    formatted_response = await azure_get_data(prescriptions, selected_language)
     medinfo = copy.deepcopy(formatted_response['results'])
 
     fields_to_drop = ["Administration", "Common side effects", "Storage"]
     for med in medinfo:
         for field in fields_to_drop:
             med.pop(field, None)
-
     return formatted_response, medinfo
 
 
-def azure_get_data(prescriptions: list, selected_language: str):
+async def azure_get_data(prescriptions: list, selected_language: str):
     """
-    Performs parallelisation calls to obtain the Medication Summary
+    Performs parallel calls to obtain the Medication Summary using asyncio
 
     Parameters:
-        prescriptions (list): A slit of prescriptions for the specified patient
-        patient_id (str, optional): Patient id of the patient
+    - prescriptions (list): A list of prescriptions for the specified patient
+    - selected_language (str): Selected language for the response
 
     Outputs:
-        Dictionary of the Medication Summary
+    - Dictionary of the Medication Summary
     """
-    # Change all to lower case
     prescriptions = [prescription.lower() for prescription in prescriptions]
 
-    results = []
     logger.info(f"Prescription: {prescriptions}")
     blobs_names = [blob['name'] for blob in blobs]
+
     try:
-        if prescriptions == []:
+        if not prescriptions:
             raise HTTPException(
                 status_code=400, detail="Prescription is empty")
-        '''
-        with Pool() as pool:
-            results = pool.starmap(azure_get_query_data, [(
-                prescription, "", selected_language, blobs_names) for prescription in prescriptions])
-                
-        # Filter out None values from results
-        filtered_results = [
-            drug for drug in results if drug and drug[0] and drug[1]]
 
-        # Extract drug names and raw strings
-        drug_results = [drug[0] for drug in filtered_results]
-        raw_strings = [drug[1] for drug in filtered_results]
+        # Create tasks for all prescriptions
+        tasks = [
+            azure_get_query_data(
+                prescription, "", selected_language, blobs_names)
+            for prescription in prescriptions
+        ]
 
-        return {"results": drug_results, "raw": '|||'.join(raw_strings)}
-                
-        '''
+        # Gather all tasks concurrently
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
         drug_results = []
         raw_strings = []
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            futures = [
-                executor.submit(azure_get_query_data, prescription,
-                                "", selected_language, blobs_names)
-                for prescription in prescriptions
-            ]
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    # Collect the result as soon as it's completed
-                    result = future.result()
-                    if result and result[0] and result[1]:
-                        drug_results.append(result[0])
-                        raw_strings.append(result[1])
-                except Exception as e:
-                    print(f"Error processing future result: {e}")
 
-        # Join the raw strings together with a delimiter
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Error processing result: {result}")
+                continue
+            if result and result[0] and result[1]:
+                drug_results.append(result[0])
+                raw_strings.append(result[1])
         return {"results": drug_results, "raw": '|||'.join(raw_strings)}
 
     except Exception as e:
-        print(f"An unexpected error occurred: {str(e)}")
+        logger.error(f"An unexpected error occurred: {str(e)}")
         return {"error": f"An unexpected error occurred: {str(e)}"}
 
 
-def azure_get_query_data(med: str, patient_id: str = "", selected_language: str = "", blobs_names=None):
+async def azure_get_query_data(
+    med: str,
+    patient_id: str = "",
+    selected_language: str = "",
+    blobs_names=None
+):
     """
     Retrieves the contextualized medication information and generates an answer.
 
     Parameters:
-        med (str): The medication query.
-        patient_id (str): Optional patient identifier (currently unused).
-        selected_language (str): Language preference for the answer.
+    - med : str
+        The medication to search for in the database. This is a required parameter.
+    - patient_id : str, optional
+        The unique identifier of the patient. Defaults to an empty string if not provided.
+    - selected_language : str, optional
+        The language for the generated response. Defaults to an empty string if not provided.
+    - blobs_names : list, optional
+        A list of blob names used to filter the search results. This parameter is required.
 
     Returns:
-        tuple: Formatted string of the generated response and the raw response content.
+    - tuple
+        A tuple containing:
+        - A formatted string with the contextualized medication response.
+        - The raw response content generated by the answer generator.
+
+    Raises:
+    ValueError
+        If `blobs_names` is not provided.
     """
+
+    # Check if blobs_names is provided
     if blobs_names is None:
         raise ValueError("blobs_names is required but not provided.")
-    # SEARCH_BLOB
-    threshold = 80
-    matches = process.extract(
-        med, blobs_names, scorer=fuzz.partial_token_set_ratio, limit=5)
 
-    print("Matches: \n", matches)
+    # Step 1: Search mapping to get a list of filenames related to the query
+    filtered_matches = await search_tables(med)
 
-    filtered_matches = [match for match in matches if match[1] >= threshold]
-    # Step 2: Extract and format the relevant context from the search response.
+    # Step 2: Extract and format the relevant context from the search response
     logger.info(f"Filtered Matches for {med}: {filtered_matches}")
-    rag_ctx = azure_get_context(filtered_matches)
+    rag_ctx = await azure_get_context(filtered_matches)
 
-    # Step 3: Configure the answer generation pipeline using the extracted context and selected language.
+    # Step 3: Configure the answer generation pipeline
     answer_generator = answer_generation_prompt | llm
 
-    # Generate the response using the LLM with the provided prescription, context, and language.
-    med_response = answer_generator.invoke({
+    # Generate the response
+    med_response = await answer_generator.ainvoke({
         'prescription': med,
         'context': rag_ctx,
         'language': selected_language
     })
 
-    # Step 4: Format and return the generated response.
     return format_string(med_response.content), med_response.content
 
 
-def azure_get_context(matches):
+async def azure_get_context(matches):
     """
-    Concatenating the context of the medication ndf
+    Concatenates the context of the medication NDF using asyncio to load and process multiple blobs concurrently.
 
     Parameters:
-        response (list): A list of documents
+    - matches : list
+        A list of blob names (strings) representing the matches related to the medication. Each blob corresponds
+        to a context that will be loaded asynchronously.
 
-    Outputs:
-        context (str): Returns a formatted context of the medication ndf in a string
+    Returns:
+    - str
+        A concatenated string containing the valid contents of all the successful NDF blobs, joined by newlines.
+        If some blobs fail, they are ignored and not included in the final result.
     """
-    context = ""
 
-    # Use ThreadPoolExecutor to load PDFs for the drugs in the query concurrently
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        # Retrieval of txt files from the container with the text files from the azure storage account
-        futures = [executor.submit(azure_load_ndf_txt, blob)
-                   for blob in matches]
+    # Create tasks for all matches
+    tasks = [azure_load_ndf_txt(blob) for blob in matches]
 
-        # Collect the results as they complete
-        for future in concurrent.futures.as_completed(futures):
-            context += future.result() + "\n"
-    return context
+    # Gather all results concurrently
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Filter out any errors and join the successful results
+    valid_results = [result for result in results if isinstance(result, str)]
+
+    return "\n".join(valid_results)
 
 
-def azure_load_ndf_txt(blob):
+async def search_tables(query: str) -> List[str]:
     """
-    Load text from Azure blob file.
+    Performs a fuzzy search on various tables (brands, groupings, and HH files) to retrieve matching filenames 
+    based on the provided query.
 
     Parameters:
-        blob (str): The blob file
+    - query : str
+        The search query (e.g., medication name or ingredient) used for fuzzy matching against multiple datasets.
+
+    Returns:
+    - list
+        A list of filenames (with `.txt` extension) that match the query or its derived terms from the search process.
+    """
+    threshold = 90
+    search_terms: Set[str] = set()
+
+    # --- Fuzzy search in brands table ---
+    brand_filtered_matches = fuzzy_search(
+        query.lower(), choices=brand_names, threshold=threshold)
+    logger.debug(f"Brand matches for '{query}': {brand_filtered_matches}")
+
+    brand_tasks = [retrieve("brands", match)
+                   for match in brand_filtered_matches]
+    brand_results_list = await asyncio.gather(*brand_tasks)
+    brand_results = dict(zip(brand_filtered_matches, brand_results_list))
+
+    # Log what we found in brands
+    logger.debug(f"Brand results: {brand_results}")
+
+    for match, records in brand_results.items():
+        for record in records:
+            active_ingredients = record["RowKey"].split(", ")
+            search_terms.update(active_ingredients)
+            logger.debug(
+                f"Added active ingredients from {match}: {active_ingredients}")
+
+    # --- Fuzzy search in grouping table ---
+    grouping_filtered_matches = fuzzy_search(
+        query.lower(), choices=drug_groupings, threshold=threshold)
+    logger.debug(
+        f"Grouping matches for '{query}': {grouping_filtered_matches}")
+
+    grouping_tasks = [retrieve("grouping", match)
+                      for match in grouping_filtered_matches]
+    grouping_results_list = await asyncio.gather(*grouping_tasks)
+    grouping_results = dict(
+        zip(grouping_filtered_matches, grouping_results_list))
+
+    # Log what we found in groupings
+    logger.debug(f"Grouping results: {grouping_results}")
+
+    for match, records in grouping_results.items():
+        for record in records:
+            groupings = record["RowKey"].split(", ")
+            search_terms.update(groupings)
+            logger.debug(f"Added groupings from {match}: {groupings}")
+
+    logger.debug(f"All search terms collected: {search_terms}")
+
+    # --- Search HH files based on ingredients and groupings ---
+    hh_matches: Set[str] = set()
+    for term in search_terms:
+        term_matches = fuzzy_search(
+            term, choices=leaflet_names, threshold=threshold)
+        hh_matches.update(term_matches)
+        logger.debug(f"Matches for term '{term}': {term_matches}")
+
+    # --- If no matches, search the original query ---
+    if not hh_matches:
+        direct_matches = fuzzy_search(
+            query.lower(), choices=leaflet_names, threshold=threshold)
+        hh_matches.update(direct_matches)
+        logger.debug(f"Direct matches for '{query}': {direct_matches}")
+
+    logger.info(f"Final HH File Headers: {hh_matches}")
+
+    # --- Return file names with .txt extension ---
+    filenames = [match + ".txt" for match in hh_matches]
+    logger.info(f"Attempting to load files: {filenames}")
+    return filenames
+
+
+async def retrieve(table_name, partition_value):
+    """
+    Retrieve entities from an Azure Table Storage table asynchronously based on PartitionKey.
+
+    Parameters:
+    - table_name (str): The name of the Azure Table Storage table.
+    - partition_value (str): The PartitionKey value to filter records.
+
+    Returns:
+    - list: A list of entities (dictionaries) matching the PartitionKey.
+              Returns an empty list if no matches are found or an error occurs.
+    """
+    table_client = get_table_client(table_name)
+    filter_query = f"PartitionKey eq '{partition_value}'"
+
+    try:
+        async with table_client:
+            entities = []
+            async for entity in table_client.query_entities(query_filter=filter_query):
+                entities.append(entity)
+            return entities
+    except Exception as e:
+        logger.error(f"Error retrieving from {table_name}: {e}")
+        return []
+
+
+def fuzzy_search(query: str, choices: list, threshold: int) -> list:
+    """
+    Performs a fuzzy search on the provided choices to find matches that meet the given threshold.
+
+    Parameters:
+    - query : str
+        The search query to be matched against the available choices.
+    - choices : list
+        A list of possible choices (strings) to search through.
+    - threshold : int
+        The minimum score required for a match to be considered valid. A higher threshold means stricter matching.
+
+    Returns:
+    - list
+        A list of strings representing the matches that have a score greater than or equal to the threshold.
+
+    """
+    return [match[0] for match in process.extract(query.lower(), choices, limit=5) if match[1] >= threshold]
+
+
+async def azure_load_ndf_txt(blob: str) -> str:
+    """
+    Loads text content from an Azure blob file, attempting different encodings for successful decoding.
+
+    Parameters:
+    - blob : str
+        The name of the blob file to be loaded from Azure.
+
+    Returns:
+    - str
+        The content of the blob as a string, or None if the blob could not be loaded or decoded successfully.
     """
     try:
-        print("blob: ", blob)
         # Get the blob name
-        blob_name = blob[0]
+        blob_name = blob
         logger.info(f"Attempting to load blob file: {blob_name}")
 
         # Get the blob client
@@ -702,22 +934,22 @@ def azure_load_ndf_txt(blob):
             for encoding in encodings:
                 try:
                     content = blob_content.decode(encoding)
-                    logger.info(f"Successfully decoded {
-                                blob_name} with {encoding} encoding")
+                    logger.info(
+                        f"Successfully decoded {blob_name} with {encoding} encoding")
                     return content
                 except UnicodeDecodeError:
-                    logger.warning(f"Failed to decode {
-                                   blob_name} with {encoding} encoding")
+                    logger.warning(
+                        f"Failed to decode {blob_name} with {encoding} encoding")
                     continue
 
             # If we get here, none of the encodings worked
-            logger.error(f"Could not decode {
-                         blob_name} with any known encoding")
+            logger.error(
+                f"Could not decode {blob_name} with any known encoding")
             return None
 
         except Exception as download_error:
-            logger.error(f"Direct blob download failed for {
-                         blob_name}: {download_error}")
+            logger.error(
+                f"Direct blob download failed for {blob_name}: {download_error}")
 
             # Fallback: Try using AzureBlobStorageFileLoader
             logger.info(
@@ -736,8 +968,8 @@ def azure_load_ndf_txt(blob):
                         f"Loader returned empty content for {blob_name}")
                     return None
             except Exception as loader_error:
-                logger.error(f"Loader fallback failed for {
-                             blob_name}: {loader_error}")
+                logger.error(
+                    f"Loader fallback failed for {blob_name}: {loader_error}")
                 return None
 
     except Exception as e:
@@ -751,11 +983,11 @@ def format_string(text: str, delimiter="\n"):
     This is to format the string into a proper dictionary 
 
     Parameters:
-        text (str): String of contexts
-        delimiter (str): The specified delimiter to split the str
+    - text (str): String of contexts
+    - delimiter (str): The specified delimiter to split the str
 
-    Outputs:
-        res[0] (dict): Returns a dictionary
+    Returns:
+    - res[0] (dict): Returns a dictionary
     """
     res = []
     text = text.replace("------", "######").replace("**", "")
@@ -783,9 +1015,9 @@ def format_string(text: str, delimiter="\n"):
         if any(key in drug_info for key in ['drug_name', 'Conditions', 'Administration', 'Common side effects', 'Storage']):
             res.append(drug_info)
 
-    logger.info("+"*153)
-    logger.info(res)
-    logger.info("+"*153)
+    logger.debug("+"*153)
+    logger.debug(res)
+    logger.debug("+"*153)
     return res[0] if len(res) > 0 else None
 
 
@@ -794,11 +1026,11 @@ def list_to_str(image_to_text, chain):
     Returns the formatted drugs information after OCR extract and processing
 
     Parameters:
-        drug_lst (list): The array that represents the image
-        chain: The chain to process each drug
+    - drug_lst (list): The array that represents the image
+    - chain: The chain to process each drug
 
-    Outputs:
-        final_resp (str): The processed context
+    Returns:
+    - final_resp (str): The processed context
     """
     results = ""
     logger.info(f"Generated text description from uploaded image:\n{
@@ -821,76 +1053,168 @@ def list_to_str(image_to_text, chain):
     return results
 
 
-async def img_process_single_image(image: UploadFile, selected_language: str):
+async def process_single_file(file: UploadFile, selected_language: str):
     """
-    Returns the drugs list and pillbox schedule for each drug in each image
+    Returns the drugs list and pillbox schedule for each drug in each image or PDF.
 
     Parameters:
-        image (UploadFile): image from an uploaded file
+    - file (UploadFile): image or PDF file from an uploaded file
+    - selected_language (str): language preference
 
-    Outputs:
-        drugs (list): The names of drugs formatted
-        json_output (dict): The pillbox schedule
+    Returns:
+    - drugs (list): The names of formatted drugs
+    - json_output (dict): The pillbox schedule
     """
-    json_parser = JsonOutputParser(pydantic_object=JSON_SCHEMA)
-    loadedImage = Image.open(io.BytesIO(await image.read()))
+    response = {}
+    drugs = []
 
-    img = loadedImage
+    logger.info(f"FILE: {file.filename}")
 
-    # Convert RGBA to RGB if necessary
-    if img.mode == 'RGBA':
-        img = img.convert('RGB')
+    try:
+        if file.content_type.startswith("image/"):
+            if "VP" in file.filename:
+                logger.info("Processing Image-PDF file...")
 
-    # Rescale image
-    _, enhanced_image_bytes = image_rescaler(
-        img,
-        min_length=2048,  # Increased minimum size
-        min_dpi=400,      # Higher DPI requirement
-        quality=100        # High quality output
-    )
+                all_elements = []
 
-    # Analyze with Azure Vision
-    ocr_results = vision_client.analyze(
-        enhanced_image_bytes,  # Convert the image to bytes
-        visual_features=[VisualFeatures.READ],
-        gender_neutral_caption=True
-    )
+                # Determine file extension (important for tempfile)
+                file_extension = "." + \
+                    file.filename.split(".")[-1].lower()  # Get extension
+                # Handle edge cases
+                if file_extension not in (".jpg", ".jpeg", ".png", ".gif", ".bmp"):
+                    file_extension = ".jpg"  # Default to JPG if unknown
 
-    # Parse OCR results to be returned in the specified formats: full concatenated string, multi-texts with newline, structured
-    parsed_results = azure_ocr_parser(ocr_results)
-    ocr_output = parsed_results['concatenated_text']
+                # Create a temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp_image:
+                    # Write the image data to the temporary file
+                    image_data = await file.read()
+                    tmp_image.write(image_data)
+                    temp_file_path = tmp_image.name  # Get the path
 
-    logger.info(f"OCR concatenated output:{ocr_output}")
+                # Verify the file was created and is a valid image:
+                if not os.path.exists(temp_file_path):
+                    raise FileNotFoundError(
+                        "Temporary file was not created successfully.")
 
-    ai_message = ocr_parser.invoke(parsed_results['concatenated_text'])
+                try:
+                    image_elements = pdf_processor.extract_image_text(
+                        temp_file_path)
+                    all_elements.extend(image_elements)
+                except Exception as e:
+                    logger.error(
+                        f"Error processing image {temp_file_path}: {e}")
 
-    response = img_complete_chain.invoke(
-        {"context2": ai_message.content, "language": selected_language})
-    drug_names = {entry['drug_name'] for entry in response['json']}
-    drugs = list(sorted(drug_names))
+                if all_elements:
+                    try:
+                        response = pdf_processor.analyse_document(
+                            all_elements, selected_language)
+                    except Exception as e:
+                        logger.error(f"Error analyzing document: {e}")
+                else:
+                    logger.warning(
+                        "No text elements extracted from PDF images.")
 
-    logger.info(f"ALL DRUGS: {drugs}")
+            else:
+                logger.info("Processing image file...")
+
+                # Load and preprocess image
+                loaded_image = Image.open(io.BytesIO(await file.read()))
+                img = loaded_image.convert(
+                    'RGB') if loaded_image.mode == 'RGBA' else loaded_image
+
+                _, enhanced_image_bytes = image_rescaler(
+                    img,
+                    min_length=2048,
+                    min_dpi=400,
+                    quality=100
+                )
+
+                # Analyse with Azure Vision OCR
+                ocr_results = vision_client.analyze(
+                    enhanced_image_bytes,
+                    visual_features=[VisualFeatures.READ],
+                    gender_neutral_caption=True
+                )
+
+                parsed_results = azure_ocr_parser(ocr_results)
+                ocr_output = parsed_results.get('concatenated_text', '')
+
+                logger.debug(f"OCR output: {ocr_output}")
+
+                ai_message = ocr_parser.invoke(ocr_output)
+
+                # Process AI message with complete chain
+                response = img_complete_chain.invoke({
+                    "context2": ai_message.content,
+                    "language": selected_language
+                })
+
+        elif file.content_type == "application/pdf":
+            logger.info("Processing PDF file...")
+
+            tmp_pdf_path = None
+            image_paths = []
+
+            # Write PDF to a temp file
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+                    tmp_pdf.write(await file.read())
+                    tmp_pdf_path = tmp_pdf.name
+
+                extracted_content = pdf_processor.extract_and_format_pdf_content(
+                    pdf_path=tmp_pdf_path)
+                response = pdf_processor.di_analyse_document(
+                    extracted_content, selected_language)
+
+            except Exception as e:
+                logger.error(f"Error converting PDF to images: {e}")
+
+            finally:
+                # Clean up temp file
+                if tmp_pdf_path and os.path.exists(tmp_pdf_path):
+                    os.remove(tmp_pdf_path)
+
+        else:
+            logger.warning(f"Unsupported file type: {file.content_type}")
+            return [], {}
+
+        # Validate and extract drugs
+        if 'json' in response and response['json']:
+            drug_names = {entry.get('drug_name', '')
+                          for entry in response['json'] if 'drug_name' in entry}
+            drugs = sorted(filter(None, drug_names))
+
+            logger.info(f"Extracted drugs: {drugs}")
+            logger.info("Structured JSON Output:")
+            logger.info(response["json"])
+        else:
+            logger.warning("No JSON data found in response.")
+            response = {"json": {}}  # Ensure it always returns a json field
+
+    except Exception as e:
+        logger.exception(f"Unexpected error during image/PDF processing: {e}")
+        response = {"json": {}}
 
     return drugs, response["json"]
 
 
-async def img_process_images(images: List[UploadFile], patient_id: str = "", selected_language: str = "English"):
+async def process_all_files(images: List[UploadFile], patient_id: str = "", selected_language: str = "English"):
     """
     Returns the cumulated drugs list and pillbox schedule for every drug in all images
 
     Parameters:
-        image (list): images from an uploaded files
-        patient_id (str): Patient id
+    - image (list): images from an uploaded files
+    - patient_id (str): Patient id
 
-    Outputs:
-        drugs (list): The complied names of drugs formatted
-        pillboxes (list): The complied pillbox schedule for all images
+    Returns:
+    - drugs (list): The complied names of drugs formatted
+    - pillboxes (list): The complied pillbox schedule for all images
     """
 
     drugs = []
     pillboxes = []
 
-    img_grps = await asyncio.gather(*(img_process_single_image(img, selected_language) for img in images))
+    img_grps = await asyncio.gather(*(process_single_file(img, selected_language) for img in images))
 
     for img_grp in img_grps:
         drugs.extend(img_grp[0])
@@ -917,7 +1241,7 @@ async def img_process_images(images: List[UploadFile], patient_id: str = "", sel
 
 @app.get("/select/all")
 def get_all_options():
-    with open("phase_2\testing_data.csv", 'r') as f:
+    with open("testing_data.csv", 'r') as f:
         data = f.readlines()[1:]
 
     patient_ids = list(set([row.split(',')[0] for row in data]))
@@ -933,74 +1257,136 @@ def get_by_id(id):
 
 
 @app.get("/api/v3/get-patient-info/{patient_id}")
-def get_patient_info(patient_id: str = "", language: Optional[str] = Query(None)):
+async def get_patient_info(patient_id: str = "", language: Optional[str] = Query(None)):
+    """Retrieve patient information, process medical data, and return a summary."""
+    start_time = datetime.now()  # Track start time
+    logger.info(f"Retrieving patient information for patient_id: {patient_id}")
+
     medical_summary = {}
-    logger = Logger()
 
-    logger.log(patient_id, f"Getting patient information")
-
-    selected_language = LANGUAGE_MAPPING.get(
-        language, 'English')  # Default to 'English'
-    logger.info(f"Selected Language: {selected_language}")
+    # Determine selected language
+    selected_language = LANGUAGE_MAPPING.get(language, "English")
+    logger.info(f"Selected language: {selected_language}")
 
     try:
+        # Retrieve patient records
         docs, prescriptions = filter_df(full_df, patient_id)
-        drug_string = ", ".join(prescriptions)
-        logger.log(patient_id, f"Drugs retrieved: {drug_string}")
+        drug_list = ", ".join(prescriptions)
+        logger.info(f"Drugs retrieved for {patient_id}: {drug_list}")
 
-        logger.log(
-            patient_id, f"Extracting conditions for patient: {patient_id}")
-
-        logger.log(patient_id, f"Creating summary and pillbox content")
+        # Extract medical conditions and pillbox content
         content = "\n".join(str(d.page_content) for d in docs)
-        medical_summary, pdfcontext = extract_conditions(
-            patient_id, prescriptions, selected_language)
+        medical_summary, pdfcontext = await extract_conditions(patient_id, prescriptions, selected_language)
 
-        logger.log(patient_id, f"Creating context for summary")
+        # Generate context summary
+        logger.info(f"Generating summary for {patient_id}")
+        context = await complete_chain.ainvoke(
+            input={"context": content, "pdfcontext": pdfcontext,
+                   "language": selected_language}
+        )
 
-        context = complete_chain.invoke(
-            input={'context': content, 'pdfcontext': pdfcontext, 'language': selected_language})
-        logger.info(f"Translated Response: {context}")
-        logger.info("+"*153)
-        logger.info(f"Translated Response[JSON]:", context['json'])
-        logger.info("+"*153)
-        medical_summary["info"] = context['json']
-        logger.info(f"Updated Medical Summary: {medical_summary}")
+        # Log context details for debugging
+        logger.debug(f"Translated Response: {context}")
+        logger.debug("-" * 80)
+        logger.debug(f"JSON Response: {context.get('json', 'N/A')}")
+        logger.debug("-" * 80)
+
+        # Store processed data
+        medical_summary["info"] = context.get("json", {})
+
     except Exception as e:
-        logger.log(
-            patient_id, f"Exception occurred while invoking complete_chain: {e}")
+        logger.error(f"Error processing request for {patient_id}: {e}")
 
-    logger.log(patient_id, "Successfully created Pillbox and Summary!")
+    # Compute processing time
+    end_time = datetime.now()
+    total_seconds = (end_time - start_time).total_seconds()
+    logger.info(
+        f"Processing time: {total_seconds:.2f} seconds ({total_seconds / 60:.2f} minutes)")
+
+    logger.info(
+        f"Successfully generated Pillbox and Summary for patient_id: {patient_id}")
     return medical_summary
 
 
+def normalise_pillbox(pillbox):
+    cleaned_pillbox = []
+
+    for drug in pillbox:
+        if not drug["schedule"]:  # Remove if schedule is empty
+            continue
+
+        # Check if the latest schedule has at least one non-zero value
+        latest_schedule = drug["schedule"][-1]
+        if sum(latest_schedule.values()) == 0:
+            # Find the most recent non-zero schedule
+            for sched in reversed(drug["schedule"]):
+                if sum(sched.values()) > 0:
+                    latest_schedule = sched
+                    break
+            else:
+                continue  # Skip this entry if all schedules are zero
+
+        # Keep only the relevant schedule entry
+        drug["schedule"] = [latest_schedule]
+        cleaned_pillbox.append(drug)
+
+    return cleaned_pillbox
+
+
 @app.post("/api/v3/from-image/{patient_id}")
-def from_image(images: List[UploadFile] = File(...), patient_id: str = "", language: Optional[str] = Query(None)):
-    selected_language = LANGUAGE_MAPPING.get(
-        language, 'English')  # Default to 'English'
+async def from_image(
+    images: List[UploadFile] = File(...),
+    patient_id: str = "",
+    language: Optional[str] = Query(None)
+):
+    start_time = datetime.now()  # Track start time
+    """Process uploaded images to extract medication information and generate a visual pillbox summary."""
+
+    # Determine selected language
+    selected_language = LANGUAGE_MAPPING.get(language, "English")
     logger.info(f"Selected Language: {selected_language}")
 
-    drug_list, pillbox_list = asyncio.run(
-        img_process_images(images, patient_id, selected_language))
+    # Process images asynchronously
+    drug_list, pillbox_list = await process_all_files(images, patient_id, selected_language)
 
-    drug_string = ', '.join(drug_list)
-    logger.info(f"Drugs retrieved: {drug_string}")
+    logger.info(f"*** Original Pillbox: {pillbox_list}")
+
+    pillbox_list = normalise_pillbox(pillbox_list)
+
+    logger.info(f"*** Normalised Pillbox: {pillbox_list}")
+
+    # Log retrieved medications
+    drug_string = ", ".join(drug_list)
+    logger.info(f"All Drugs: {drug_string}")
+    logger.info(f"Pillbox: {pillbox_list}")
+
     logger.info("Creating medication summary")
-    # change here to azure_data_NEW
-    res = azure_get_data(prescriptions=drug_list,
-                         selected_language=selected_language)
+
+    # Retrieve structured medication data
+    res = await azure_get_data(prescriptions=drug_list, selected_language=selected_language)
+
+    # Attach pillbox visual data
     res["info"] = pillbox_list
-    logger.info("+"*153)
-    logger.info(res["info"])
-    logger.info("+"*153)
+
+    # Log generated visual materials
+    logger.debug("+" * 80)
+    logger.debug(f"Pillbox Summary: {res['info']}")
+    logger.debug("+" * 80)
+
+    # Compute processing time
+    end_time = datetime.now()
+    total_seconds = (end_time - start_time).total_seconds()
+    logger.info(
+        f"Processing time: {total_seconds:.2f} seconds ({total_seconds / 60:.2f} minutes)")
     logger.info("Successfully created all visual materials")
+
     return res
 
 
 @app.get("/api/v3/get-raw")
 def get_raw_all():
 
-    with open("phase_2\testing_data.csv", 'r') as f:
+    with open("testing_data.csv", 'r') as f:
         all_lines = f.readlines()[1:]
 
     results = []

@@ -1,0 +1,314 @@
+2025-05-06 10:33:11,729 - INFO - Initialising Blob Service Client...
+2025-05-06 10:33:11,833 - INFO - Successfully connected to container: healthhub-drugs-txt
+2025-05-06 10:33:11,833 - INFO - Request URL: 'https://healthhubstore.blob.core.windows.net/healthhub-drugs-txt?restype=REDACTED&comp=REDACTED'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'Accept': 'application/xml'
+    'User-Agent': 'azsdk-python-storage-blob/12.24.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'x-ms-date': 'REDACTED'
+    'x-ms-client-request-id': '74624179-2a22-11f0-a7f4-8038fb1462b0'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 10:33:13,241 - INFO - Response status: 200
+Response headers:
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/xml'
+    'Server': 'Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': '7ab64ac3-401e-000f-5c2f-be0abe000000'
+    'x-ms-client-request-id': '74624179-2a22-11f0-a7f4-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 02:33:13 GMT'
+2025-05-06 10:34:04,453 - INFO - Initialising Blob Service Client...
+2025-05-06 10:34:04,532 - INFO - Successfully connected to container: healthhub-drugs-txt
+2025-05-06 10:34:04,533 - INFO - Request URL: 'https://healthhubstore.blob.core.windows.net/healthhub-drugs-txt?restype=REDACTED&comp=REDACTED'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'Accept': 'application/xml'
+    'User-Agent': 'azsdk-python-storage-blob/12.24.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'x-ms-date': 'REDACTED'
+    'x-ms-client-request-id': '93cb8e00-2a22-11f0-b07d-8038fb1462b0'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 10:34:06,188 - INFO - Response status: 200
+Response headers:
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/xml'
+    'Server': 'Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': '00f83526-a01e-0065-112f-bed296000000'
+    'x-ms-client-request-id': '93cb8e00-2a22-11f0-b07d-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 02:34:05 GMT'
+2025-05-06 10:34:17,690 - INFO - Initialising Blob Service Client...
+2025-05-06 10:34:17,785 - INFO - Successfully connected to container: healthhub-drugs-txt
+2025-05-06 10:34:17,785 - INFO - Request URL: 'https://healthhubstore.blob.core.windows.net/healthhub-drugs-txt?restype=REDACTED&comp=REDACTED'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'Accept': 'application/xml'
+    'User-Agent': 'azsdk-python-storage-blob/12.24.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'x-ms-date': 'REDACTED'
+    'x-ms-client-request-id': '9bb1c452-2a22-11f0-9201-8038fb1462b0'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 10:34:19,157 - INFO - Response status: 200
+Response headers:
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/xml'
+    'Server': 'Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': 'f4cb31d6-501e-0061-602f-be5f91000000'
+    'x-ms-client-request-id': '9bb1c452-2a22-11f0-9201-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 02:34:18 GMT'
+2025-05-06 10:34:19,215 - INFO - Request URL: 'https://healthhubstore.table.core.windows.net/brands()'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'DataServiceVersion': 'REDACTED'
+    'Accept': 'application/json;odata=minimalmetadata'
+    'x-ms-client-request-id': '9c8be08f-2a22-11f0-9e5c-8038fb1462b0'
+    'x-ms-date': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 02:34:19 GMT'
+    'User-Agent': 'azsdk-python-data-tables/12.6.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 10:34:20,176 - INFO - Response status: 200
+Response headers:
+    'Cache-Control': 'no-cache'
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/json;odata=minimalmetadata;streaming=true;charset=utf-8'
+    'Server': 'Windows-Azure-Table/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': '71f47939-2002-0044-072f-bef6ed000000'
+    'x-ms-client-request-id': '9c8be08f-2a22-11f0-9e5c-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'X-Content-Type-Options': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 02:34:21 GMT'
+2025-05-06 10:34:20,177 - INFO - Request URL: 'https://healthhubstore.table.core.windows.net/grouping()'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'DataServiceVersion': 'REDACTED'
+    'Accept': 'application/json;odata=minimalmetadata'
+    'x-ms-client-request-id': '9d1ea6cb-2a22-11f0-bd90-8038fb1462b0'
+    'x-ms-date': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 02:34:20 GMT'
+    'User-Agent': 'azsdk-python-data-tables/12.6.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 10:34:20,402 - INFO - Response status: 200
+Response headers:
+    'Cache-Control': 'no-cache'
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/json;odata=minimalmetadata;streaming=true;charset=utf-8'
+    'Server': 'Windows-Azure-Table/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': '71f47946-2002-0044-122f-bef6ed000000'
+    'x-ms-client-request-id': '9d1ea6cb-2a22-11f0-bd90-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'X-Content-Type-Options': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 02:34:21 GMT'
+2025-05-06 10:34:20,416 - INFO - Successfully established connection to Azure Vision Client...
+2025-05-06 11:13:08,543 - INFO - Initialising Blob Service Client...
+2025-05-06 11:13:08,666 - INFO - Successfully connected to container: healthhub-drugs-txt
+2025-05-06 11:13:08,666 - INFO - Request URL: 'https://healthhubstore.blob.core.windows.net/healthhub-drugs-txt?restype=REDACTED&comp=REDACTED'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'Accept': 'application/xml'
+    'User-Agent': 'azsdk-python-storage-blob/12.24.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'x-ms-date': 'REDACTED'
+    'x-ms-client-request-id': '0901dac2-2a28-11f0-a43a-8038fb1462b0'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 11:13:10,385 - INFO - Response status: 200
+Response headers:
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/xml'
+    'Server': 'Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': 'be7e03ff-b01e-0056-6034-be8d3d000000'
+    'x-ms-client-request-id': '0901dac2-2a28-11f0-a43a-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:13:10 GMT'
+2025-05-06 11:13:10,522 - INFO - Request URL: 'https://healthhubstore.table.core.windows.net/brands()'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'DataServiceVersion': 'REDACTED'
+    'Accept': 'application/json;odata=minimalmetadata'
+    'x-ms-client-request-id': '0a1cf9e3-2a28-11f0-9e8b-8038fb1462b0'
+    'x-ms-date': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:13:10 GMT'
+    'User-Agent': 'azsdk-python-data-tables/12.6.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 11:13:11,638 - INFO - Response status: 200
+Response headers:
+    'Cache-Control': 'no-cache'
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/json;odata=minimalmetadata;streaming=true;charset=utf-8'
+    'Server': 'Windows-Azure-Table/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': 'f2d1aedb-6002-006a-5c34-bea4fa000000'
+    'x-ms-client-request-id': '0a1cf9e3-2a28-11f0-9e8b-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'X-Content-Type-Options': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:13:12 GMT'
+2025-05-06 11:13:11,640 - INFO - Request URL: 'https://healthhubstore.table.core.windows.net/grouping()'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'DataServiceVersion': 'REDACTED'
+    'Accept': 'application/json;odata=minimalmetadata'
+    'x-ms-client-request-id': '0ac7b0ab-2a28-11f0-975b-8038fb1462b0'
+    'x-ms-date': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:13:11 GMT'
+    'User-Agent': 'azsdk-python-data-tables/12.6.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 11:13:11,900 - INFO - Response status: 200
+Response headers:
+    'Cache-Control': 'no-cache'
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/json;odata=minimalmetadata;streaming=true;charset=utf-8'
+    'Server': 'Windows-Azure-Table/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': 'f2d1aee7-6002-006a-6634-bea4fa000000'
+    'x-ms-client-request-id': '0ac7b0ab-2a28-11f0-975b-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'X-Content-Type-Options': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:13:12 GMT'
+2025-05-06 11:13:11,900 - INFO - Successfully established connection to Azure Vision Client...
+2025-05-06 11:14:47,029 - INFO - Initialising Blob Service Client...
+2025-05-06 11:14:47,168 - INFO - Successfully connected to container: healthhub-drugs-txt
+2025-05-06 11:14:47,168 - INFO - Request URL: 'https://healthhubstore.blob.core.windows.net/healthhub-drugs-txt?restype=REDACTED&comp=REDACTED'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'Accept': 'application/xml'
+    'User-Agent': 'azsdk-python-storage-blob/12.24.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'x-ms-date': 'REDACTED'
+    'x-ms-client-request-id': '43b827a1-2a28-11f0-aecc-8038fb1462b0'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 11:14:48,777 - INFO - Response status: 200
+Response headers:
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/xml'
+    'Server': 'Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': 'bc042c15-201e-0044-2435-bef6ed000000'
+    'x-ms-client-request-id': '43b827a1-2a28-11f0-aecc-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:14:49 GMT'
+2025-05-06 11:14:48,857 - INFO - Request URL: 'https://healthhubstore.table.core.windows.net/brands()'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'DataServiceVersion': 'REDACTED'
+    'Accept': 'application/json;odata=minimalmetadata'
+    'x-ms-client-request-id': '44b91c76-2a28-11f0-858f-8038fb1462b0'
+    'x-ms-date': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:14:48 GMT'
+    'User-Agent': 'azsdk-python-data-tables/12.6.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 11:14:49,829 - INFO - Response status: 200
+Response headers:
+    'Cache-Control': 'no-cache'
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/json;odata=minimalmetadata;streaming=true;charset=utf-8'
+    'Server': 'Windows-Azure-Table/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': '273fdef8-4002-001f-7035-becfd6000000'
+    'x-ms-client-request-id': '44b91c76-2a28-11f0-858f-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'X-Content-Type-Options': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:14:50 GMT'
+2025-05-06 11:14:49,832 - INFO - Request URL: 'https://healthhubstore.table.core.windows.net/grouping()'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'DataServiceVersion': 'REDACTED'
+    'Accept': 'application/json;odata=minimalmetadata'
+    'x-ms-client-request-id': '454e9083-2a28-11f0-821c-8038fb1462b0'
+    'x-ms-date': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:14:49 GMT'
+    'User-Agent': 'azsdk-python-data-tables/12.6.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 11:14:50,093 - INFO - Response status: 200
+Response headers:
+    'Cache-Control': 'no-cache'
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/json;odata=minimalmetadata;streaming=true;charset=utf-8'
+    'Server': 'Windows-Azure-Table/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': '273fdf14-4002-001f-7c35-becfd6000000'
+    'x-ms-client-request-id': '454e9083-2a28-11f0-821c-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'X-Content-Type-Options': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:14:50 GMT'
+2025-05-06 11:14:50,093 - INFO - Successfully established connection to Azure Vision Client...
+2025-05-06 11:16:52,821 - INFO - Initialising Blob Service Client...
+2025-05-06 11:16:52,932 - INFO - Successfully connected to container: healthhub-drugs-txt
+2025-05-06 11:16:52,935 - INFO - Request URL: 'https://healthhubstore.blob.core.windows.net/healthhub-drugs-txt?restype=REDACTED&comp=REDACTED'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'Accept': 'application/xml'
+    'User-Agent': 'azsdk-python-storage-blob/12.24.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'x-ms-date': 'REDACTED'
+    'x-ms-client-request-id': '8eaea32f-2a28-11f0-b73c-8038fb1462b0'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 11:16:54,934 - INFO - Response status: 200
+Response headers:
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/xml'
+    'Server': 'Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': 'fa960fb1-201e-0009-1135-be3901000000'
+    'x-ms-client-request-id': '8eaea32f-2a28-11f0-b73c-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:16:55 GMT'
+2025-05-06 11:16:54,972 - INFO - Request URL: 'https://healthhubstore.table.core.windows.net/brands()'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'DataServiceVersion': 'REDACTED'
+    'Accept': 'application/json;odata=minimalmetadata'
+    'x-ms-client-request-id': '8fe5693f-2a28-11f0-a80e-8038fb1462b0'
+    'x-ms-date': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:16:54 GMT'
+    'User-Agent': 'azsdk-python-data-tables/12.6.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 11:16:56,153 - INFO - Response status: 200
+Response headers:
+    'Cache-Control': 'no-cache'
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/json;odata=minimalmetadata;streaming=true;charset=utf-8'
+    'Server': 'Windows-Azure-Table/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': '5a9082be-e002-0064-5a35-be8d4a000000'
+    'x-ms-client-request-id': '8fe5693f-2a28-11f0-a80e-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'X-Content-Type-Options': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:16:56 GMT'
+2025-05-06 11:16:56,158 - INFO - Request URL: 'https://healthhubstore.table.core.windows.net/grouping()'
+Request method: 'GET'
+Request headers:
+    'x-ms-version': 'REDACTED'
+    'DataServiceVersion': 'REDACTED'
+    'Accept': 'application/json;odata=minimalmetadata'
+    'x-ms-client-request-id': '909a6418-2a28-11f0-9ee8-8038fb1462b0'
+    'x-ms-date': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:16:56 GMT'
+    'User-Agent': 'azsdk-python-data-tables/12.6.0 Python/3.12.7 (Windows-11-10.0.26100-SP0)'
+    'Authorization': 'REDACTED'
+No body was attached to the request
+2025-05-06 11:16:56,395 - INFO - Response status: 200
+Response headers:
+    'Cache-Control': 'no-cache'
+    'Transfer-Encoding': 'chunked'
+    'Content-Type': 'application/json;odata=minimalmetadata;streaming=true;charset=utf-8'
+    'Server': 'Windows-Azure-Table/1.0 Microsoft-HTTPAPI/2.0'
+    'x-ms-request-id': '5a9082d7-e002-0064-7035-be8d4a000000'
+    'x-ms-client-request-id': '909a6418-2a28-11f0-9ee8-8038fb1462b0'
+    'x-ms-version': 'REDACTED'
+    'X-Content-Type-Options': 'REDACTED'
+    'Date': 'Tue, 06 May 2025 03:16:56 GMT'
+2025-05-06 11:16:56,395 - INFO - Successfully established connection to Azure Vision Client...

@@ -1,3 +1,29 @@
+# azure-ai-vision-imageanalysis==1.0.0
+# azure-data-tables==12.6.0
+# azure-identity==1.19.0
+# azure-search-documents==11.5.2
+# azure-storage-blob==12.24.0
+# fastapi==0.115.6
+# fuzzywuzzy==0.18.0
+# google-cloud-aiplatform==1.75.0
+# google-cloud-vision==3.9.0
+# google-cloud-discoveryengine==0.13.5
+# langchain==0.3.12
+# langchain-community==0.3.12
+# langchain-google-vertexai==2.0.9
+# langchain-openai==0.2.12
+# opencv-python==4.10.0.84
+# pandas==2.2.3
+# pillow==11.0.0
+# python-dotenv==1.0.1
+# python-Levenshtein==0.26.1
+# python-multipart==0.0.20
+# PyMuPDF==1.25.1
+# scikit-learn==1.6.0
+# uvicorn==0.34.0
+# unstructured[pdf]
+
+azure-ai-documentintelligence==1.0.2
 azure-ai-vision-imageanalysis==1.0.0
 azure-data-tables==12.6.0
 azure-identity==1.19.0
@@ -5,12 +31,8 @@ azure-search-documents==11.5.2
 azure-storage-blob==12.24.0
 fastapi==0.115.6
 fuzzywuzzy==0.18.0
-google-cloud-aiplatform==1.75.0
-google-cloud-vision==3.9.0
-google-cloud-discoveryengine==0.13.5
 langchain==0.3.12
 langchain-community==0.3.12
-langchain-google-vertexai==2.0.9
 langchain-openai==0.2.12
 opencv-python==4.10.0.84
 pandas==2.2.3

@@ -3,7 +3,6 @@ I will provide you with context about a specific drug. Your task is to create a 
 
 ### Instructions for Generating the Medical Summary:
 - Use simple, non-technical language suitable for patients to understand.
-- Limit the summary to **500 words or fewer** per drug.
 - Do not assume prior knowledge or include external references.
 - Focus on:
   - **Clarity:** Information must be precise and unambiguous.
@@ -38,7 +37,6 @@ $$$$$$
 ### Context for the Drug:
 {context}
 """
-
 
 
 STRUCTURED_GENERATOR_PROMPT = """
@@ -321,77 +319,100 @@ If any of the fields is not provided in the dosage instructions, keep it blank, 
 """
 
 
-IMG_JSON_GENERATOR_PROMPT = """
-As a healthcare assistant responsible for managing medication plans, your task is to generate a JSON file summarizing the patient's medication regimen. You have been provided with detailed information about each drug, including the drug name, dose, unit of measure, time(s) of administration, weekdays for administration, frequency of administration, and any additional notes.
-The JSON file should accurately represent the medication plan provided, ensuring precision and consistency in the output format. Each drug entry should include the drug name, unit of measure, dosage, content per unit, frequency, instruction, condition and a schedule representing the pattern of administration. If any field in the JSON file does not have a value, leave it as an empty string (""). Do not put it as "null". The output should be an array of drug dictionaries.
-Do not include external knowledge only use the context2 provided to answer.
+IMG_JSON_GENERATOR_PROMPT = r"""
+As a healthcare assistant responsible for managing medication plans, your task is to generate a JSON array summarizing the patient's medication regimen.
 
-For output of drug_name:
-a) only put the drug_name
-b) only put original drug name if provided in "Drug"
-c) do not put the size of dosage here 
-d) do not add anything stick to original spelling
-Eg. if given "Panadol (Paracetamol 2mg)" change it to "Panadol (Paracetamol)"
+You will be provided with details on the patient's drug regime.
+The drugs can be found in the text between "Medication Review for Transfer into KTPH@Home" and "~ End of Transfer Medication List~"
+Each drug is delimited by either '*' or '+', and all information relating to that ONE drug is contained WITHIN the delimiting symbols.
+For example: * [START ON 15/2/2025] X Injection 50 mg BD (9am, 3pm) + 
 
-For output of uom:
-a) put it all in lower case like tablet,syrup,injection, etc.
+Each drug typically contains the three main categories of information:
+- drug name/description (e.g. X Injection)
+- The prescribed amount to consume (e.g. 50mg)
+- frequency (e.g. BD (9am, 3pm))
 
-Ensure the following:
-1. For drugs consumed every day, include a single dictionary in the schedule indicating the dosage for morning, afternoon, and evening.
-The numbers in the schedule should refer to the count of dosage corresponding to that period, and not the dosage amount.
+Follow these steps to generate your JSON file:
+1. Separate each drug using the delimiting symbols ('*' or '+'). DO NOT split information within ONE drug into 2 items in the JSON file. 
+2. Process each drug one by one according to the REQUIREMENTS listed below and do not mix the instructions for different drugs.
+3. Ensure all drugs are included in your JSON file. 
 
-Eg. Patient needs to take 2 tablets of drugA 3 times a day from Monday to Sunday. 
+## REQUIREMENTS:
+In your JSON file, each drug entry must include:
+- **drug_name**: Original drug name exactly as provided (exclude dosage/strength).
+- **uom**: Unit of measurement in lowercase (e.g., tablet, syrup, injection).
+- **dosage**: The prescribed amount to consume (e.g. 2 tablets, 1 injection, 100mg etc). 
+- **content/uom**: Amount of active ingredient per unit. (e.g. 20mg)
+- **frequency**: How often the drug is to be taken (e.g., OM, ON, BD, TDS, QDS, PRN, etc.).
+- **instruction**: Include only explicit instructions from the clinical data such as cautionary notes, food-timing if explicitly provided (e.g., "take before meals" or "after meals"), PRN indication, route, when to start this medication, or whether to stop this medication (as indicated under 'Medication Changes'). Do not add any food-timing instructions if they are not specified.
+- **condition**: The condition being treated.
+- **duration**: **Only include this field if the clinical prescription explicitly instructs “take for X days” or a similar duration of therapy. Do not populate "duration" based solely on pharmacy supply notes.**
+- **when_to_take**: Specify the recommended time of day based on frequency code definitions below and any explicit timing instructions provided (e.g., "morning", "afternoon", "evening", "night"). Set the value as "when required" ONLY when the frequency code includes "PRN". 
+- **schedule**: A structured pattern of administration using four possible time slots: {{ "morning" }}, {{ "afternoon" }}, {{ "evening" }}, and {{ "night" }}. For each time slot, indicate whether the medication should be administered, with 1 being 'yes' and 0 being 'no'.
 
-[|
-drug_name: drugA,
-uom: tablet,
-dosage: Dose,
-content/uom: "Content" + "/" + uom,
-frequency: 3 times a day
-instruction: "Cautions" or for antibiotics "complete the course",
-condition: for sore throat,
-schedule: [|"morning": 2, "afternoon": 2, "evening": 2|]
-|]
+Each object must include these fields:
+1. **drug_name**  
+   - Must match the original drug name exactly (omit dosage/strength).  
+2. **uom**  
+   - Lowercase unit of measure (`"tablet"`, `"syrup"`, `"injection"`, or `"sc"` for subcutaneous).  
+3. **dosage**  
+   - Prescribed amount (e.g., `"50 mg"`, `"2 scoops"`).  
+4. **content/uom**  
+   - Active ingredient per unit, formatted as `"<Content>/<uom>"`.  
+5. **frequency**  
+   - Free-text code (e.g., `"OM"`, `"TDS PRN"`).  
+6. **instruction**  
+   - Any cautionary or timing notes (`"complete the course"`, `"take after meals"`, `"when required"`).  
+7. **condition**  
+   - Medical condition indication (if provided).  
+8. **duration**  
+   - Total duration (e.g., `"for 7 days"`, `"up to 14 days"`).  
+9. **when_to_take**  
+   - One of: `"morning"`, `"afternoon"`, `"evening"`, `"night"`, or `"when required"`.  
+10. **schedule**  
+    - Either a single-element array (if same every day) or a 7-element array (one per Mon→Sun), mapping each period to its count:
 
-2. For drugs that have more than one pattern of dosage and frequency ie. it differs day by day, include multiple dictionaries in the schedule, each representing the dosage for morning, afternoon, and evening for each day of administration.
-Eg. Patient needs to take 0.5ml of drugB once a week, every Monday and Thursday morning.
+      ```json
+      [
+        {{"morning":1, "afternoon":1, "evening":0, "night":1}}
+      ]
+      ```
 
-[|
-drug_name: drugB,
-uom: syrup,
-dosage: Dose,
-content/uom: "Content" + "/" + uom,
-frequency: twice a week,
-instruction: "",
-condition: for diabetes
-schedule: [|"morning": 1, "afternoon": 0, "evening": 0|, 
-            |"morning": 0, "afternoon": 0, "evening": 0|,
-            |"morning": 0, "afternoon": 0, "evening": 0|,
-            |"morning": 1, "afternoon": 0, "evening": 0|,
-            |"morning": 0, "afternoon": 0, "evening": 0|,
-            |"morning": 0, "afternoon": 0, "evening": 0|,
-            |"morning": 0, "afternoon": 0, "evening": 0|]
-|]
+### Exclusion Criteria
+- **Omit** any medication explicitly discontinued in the **Medication Changes** section:
+  1. Identify any line whose change note begins (case-insensitive) with one of:
+     - `^\s*\[STOP\]`
+     - `^\s*STOP(?: TAKING)?`
+     - `^\s*DISCONTINUE(?:D)?`
+     - `^\s*CANCEL`
+  2. From each matched line, take everything after the flag, split on commas, trim whitespace, and strip any parenthetical notes (e.g. “(fall)”).
+  3. Exclude **all** those drug names from your JSON.
 
-3. If schedule is not unique eg. schedule: [|"morning": 1, "afternoon": 0, "evening": 1|, 
-            |"morning": 1, "afternoon": 0, "evening": 1|,
-            |"morning": 1, "afternoon": 0, "evening": 1|,
-            |"morning": 1, "afternoon": 0, "evening": 1|,
-            |"morning": 1, "afternoon": 0, "evening": 1|,
-            |"morning": 1, "afternoon": 0, "evening": 1|,
-            |"morning": 1, "afternoon": 0, "evening": 1|]
-    reduce it to only 1 unique schedule eg. schedule: [|"morning": 1, "afternoon": 0, "evening": 1|]
+### Frequency → Schedule Mappings
 
-Generate the final JSON file output in {language} language. 
-Make sure frequency, instruction, condition are fully translated. 
-Ensure that all drug names remain in their original form without translation.
-Do not translate the unit of measurement and schedule, keep both of these in their original form without translation.
-Your JSON file should include all drugs with their specified times, ensuring no medications are missed. 
+| Code  | Description                                   | schedule (JSON literal)                                             | when_to_take                   |
+|-------|-----------------------------------------------|---------------------------------------------------------------------|--------------------------------|
+| OM    | Once every morning                            | `[{{"morning":1, "afternoon":0, "evening":0, "night":0}}]`          | `"morning"`                    |
+| ON    | Once every night                              | `[{{"morning":0, "afternoon":0, "evening":0, "night":1}}]`          | `"night"`                      |
+| BD    | Twice daily (morning + night)                 | `[{{"morning":1, "afternoon":0, "evening":0, "night":1}}]`          | `"morning and night"`          |
+| TDS   | Three times daily (morning, afternoon, night) | `[{{"morning":1, "afternoon":1, "evening":0, "night":1}}]`          | `"morning, afternoon, night"`  |
+| QDS   | Four times daily (all four periods)           | `[{{"morning":1, "afternoon":1, "evening":1, "night":1}}]`          | `"throughout the day"`         |
+| PRN   | When required                                 | infer slots (e.g., OM PRN ⇒ morning) and set `"when_required"`      | `"when required"`              |
+| Q8H, Q24H, STAT, Continuous … | Follow explicit instructions; include `"when required"` if PRN variant. | — | — |
 
-Ensure that you do not include any explanation or preamble in your final answer.
+### Additional Rules
+1. **Scoops distribution**: If `uom` is `"scoop"` and no specific times, spread evenly across morning, afternoon, evening.  
+2. **Condense repeats**: If the same schedule applies all 7 days, use a one-element `schedule` array.  
+3. **Day-by-day variation**: If dosing changes per weekday, output exactly 7 objects in `schedule`.
 
-Please refer to the provided drug list and dosage instructions to accurately create the JSON file.
+### 8. Final Output Rules
+- Translate only the fields: frequency, instruction, condition, duration, and when_to_take → {language}.
+- Do not translate drug_name, uom, or schedule.
+- Do not include any explanations or preamble in the final JSON output.
+- If no medications meet the inclusion criteria, return [].
+- You MUST ensure all drugs are included in your JSON file. DO NOT split information within ONE drug into 2 items in the JSON file.
+- Re-read your output JSON file to ensure compliance with the requirements above. 
+
+To build the JSON file, refer to the "Medication Review for Transfer into KTPH@Home" and "Medication Changes" sections in the following text: 
 {context2}
-
 """
-
