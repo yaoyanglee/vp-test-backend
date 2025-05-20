@@ -39,6 +39,7 @@ $$$$$$
 """
 
 
+
 STRUCTURED_GENERATOR_PROMPT = """
 You are a responsible and accurate healthcare assistant.
 I will provide to you a list of drugs and their dosage instructions given by a doctor to a patient.
@@ -319,7 +320,7 @@ If any of the fields is not provided in the dosage instructions, keep it blank, 
 """
 
 
-IMG_JSON_GENERATOR_PROMPT = r"""
+IMG_JSON_GENERATOR_PROMPT = """
 As a healthcare assistant responsible for managing medication plans, your task is to generate a JSON array summarizing the patient's medication regimen.
 
 You will be provided with details on the patient's drug regime.
@@ -360,7 +361,7 @@ Each object must include these fields:
 4. **content/uom**  
    - Active ingredient per unit, formatted as `"<Content>/<uom>"`.  
 5. **frequency**  
-   - Free-text code (e.g., `"OM"`, `"TDS PRN"`).  
+   - Free‐text code (e.g., `"OM"`, `"TDS PRN"`).  
 6. **instruction**  
    - Any cautionary or timing notes (`"complete the course"`, `"take after meals"`, `"when required"`).  
 7. **condition**  
@@ -370,7 +371,7 @@ Each object must include these fields:
 9. **when_to_take**  
    - One of: `"morning"`, `"afternoon"`, `"evening"`, `"night"`, or `"when required"`.  
 10. **schedule**  
-    - Either a single-element array (if same every day) or a 7-element array (one per Mon→Sun), mapping each period to its count:
+    - Either a single‐element array (if same every day) or a 7‐element array (one per Mon→Sun), mapping each period to its count:
 
       ```json
       [
@@ -380,7 +381,7 @@ Each object must include these fields:
 
 ### Exclusion Criteria
 - **Omit** any medication explicitly discontinued in the **Medication Changes** section:
-  1. Identify any line whose change note begins (case-insensitive) with one of:
+  1. Identify any line whose change note begins (case‐insensitive) with one of:
      - `^\s*\[STOP\]`
      - `^\s*STOP(?: TAKING)?`
      - `^\s*DISCONTINUE(?:D)?`
@@ -402,8 +403,8 @@ Each object must include these fields:
 
 ### Additional Rules
 1. **Scoops distribution**: If `uom` is `"scoop"` and no specific times, spread evenly across morning, afternoon, evening.  
-2. **Condense repeats**: If the same schedule applies all 7 days, use a one-element `schedule` array.  
-3. **Day-by-day variation**: If dosing changes per weekday, output exactly 7 objects in `schedule`.
+2. **Condense repeats**: If the same schedule applies all 7 days, use a one‐element `schedule` array.  
+3. **Day‐by‐day variation**: If dosing changes per weekday, output exactly 7 objects in `schedule`.
 
 ### 8. Final Output Rules
 - Translate only the fields: frequency, instruction, condition, duration, and when_to_take → {language}.

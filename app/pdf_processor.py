@@ -14,7 +14,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from operator import itemgetter
-from app.prompt import IMG_JSON_GENERATOR_PROMPT
+from prompt import IMG_JSON_GENERATOR_PROMPT
 from pydantic import BaseModel, Field
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple, Union
 from unstructured.partition.image import partition_image
@@ -57,11 +57,11 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
 logger = logging.getLogger(__name__)
 
 # --- Load all configuration settings ---
 config = configparser.ConfigParser()
-# config.read('config.prop')
 config_path = os.path.join(os.path.dirname(__file__), "config.prop")
 config.read(config_path)
 os.environ["AZURE_OPENAI_ENDPOINT"] = config['azure_openai']['azure_openai_endpoint']
@@ -379,7 +379,6 @@ class PDFProcessor:
                 {"context2": output_string, "language": selected_language})
             response['json'] = self.schedule_corrector(response['json'])
 
-            print(f"***** RESPONSE: {response}")
             return response
 
         except Exception as e:
