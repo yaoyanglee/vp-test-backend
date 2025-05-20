@@ -14,7 +14,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from operator import itemgetter
-from prompt import IMG_JSON_GENERATOR_PROMPT
+from app.prompt import IMG_JSON_GENERATOR_PROMPT
 from pydantic import BaseModel, Field
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple, Union
 from unstructured.partition.image import partition_image

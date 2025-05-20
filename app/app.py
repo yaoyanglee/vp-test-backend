@@ -41,12 +41,12 @@ from multiprocessing import Pool
 from operator import itemgetter
 from rapidfuzz import process, fuzz
 from PIL import Image, ImageEnhance
-from pdf_processor import PDFProcessor
-from structs.response.RawEntry import RawEntry
-from structs.response.RxEntry import RxEntry
-from structs.request.GetPatientDataRaw import GetPatientDataRaw
-from routes.sse.sse_routes import sse_router
-from prompt import CHAT_SYSTEM_PROMPT, STRUCTURED_GENERATOR_PROMPT, JSON_GENERATOR_PROMPT, IMG_EXTRACTION_PROMPT, IMG_OCR_PROMPT, IMG_JSON_GENERATOR_PROMPT
+from app.pdf_processor import PDFProcessor
+from app.structs.response.RawEntry import RawEntry
+from app.structs.response.RxEntry import RxEntry
+from app.structs.request.GetPatientDataRaw import GetPatientDataRaw
+from app.routes.sse.sse_routes import sse_router
+from app.prompt import CHAT_SYSTEM_PROMPT, STRUCTURED_GENERATOR_PROMPT, JSON_GENERATOR_PROMPT, IMG_EXTRACTION_PROMPT, IMG_OCR_PROMPT, IMG_JSON_GENERATOR_PROMPT
 from pydantic import BaseModel, Field
 from typing import Any, Iterator, List, Optional, Set, Tuple, Union
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 import asyncio
 
-from logger.Logger import Logger
+from app.logger.Logger import Logger
 
 sse_router = APIRouter()
 
